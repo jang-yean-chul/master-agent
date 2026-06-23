@@ -9,3 +9,11 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Editor temp files
+*.tmp.*
