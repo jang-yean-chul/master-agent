@@ -16,3 +16,8 @@ class HandoffData(BaseModel):
     issue_type: str
     issue_description: str
     reason: str
+
+
+class OutputGuardRailOutput(BaseModel):
+    is_inappropriate: bool
+    reason: str

@@ -1,6 +1,7 @@
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from models import RestaurantContext
+from output_guardrails import professional_response_guardrail
 
 
 def dynamic_order_agent_instructions(
@@ -45,4 +46,5 @@ def dynamic_order_agent_instructions(
 order_agent = Agent(
     name="Order_Agent",
     instructions=dynamic_order_agent_instructions,
+    output_guardrails=[professional_response_guardrail],
 )

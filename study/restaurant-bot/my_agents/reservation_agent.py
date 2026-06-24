@@ -1,6 +1,7 @@
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from models import RestaurantContext
+from output_guardrails import professional_response_guardrail
 
 
 def dynamic_reservation_agent_instructions(
@@ -50,4 +51,5 @@ def dynamic_reservation_agent_instructions(
 reservation_agent = Agent(
     name="Reservation_Agent",
     instructions=dynamic_reservation_agent_instructions,
+    output_guardrails=[professional_response_guardrail],
 )

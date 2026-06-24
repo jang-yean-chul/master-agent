@@ -4,7 +4,7 @@ dotenv.load_dotenv()
 from openai import OpenAI
 import asyncio
 import streamlit as st
-from agents import Runner, SQLiteSession, InputGuardrailTripwireTriggered
+from agents import Runner, SQLiteSession, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered
 from models import RestaurantContext
 from my_agents.triage_agent import triage_agent
 
@@ -75,6 +75,7 @@ async def run_agent(message):
                             "Order_Agent": "주문 담당자",
                             "Reservation_Agent": "예약 담당자",
                             "Triage_Agent": "안내 담당자",
+                            "Complaints_Agent": "고객 불만 담당자",
                         }
                         display_name = agent_display_names.get(event.new_agent.name, event.new_agent.name)
                         st.write(f"🤖 {display_name}에게 연결합니다...")
@@ -87,7 +88,10 @@ async def run_agent(message):
                         response = ""
 
         except InputGuardrailTripwireTriggered:
-            st.write("죄송합니다. 저는 레스토랑 관련 질문만 도와드릴 수 있어요.")
+            st.write("저는 레스토랑 관련 질문만 도와드릴 수 있어요. 메뉴 확인, 주문, 예약을 도와드릴게요.")
+        except OutputGuardrailTripwireTriggered:
+            text_placeholder.empty()
+            st.write("죄송합니다. 응답을 다시 확인해 주시기 바랍니다. 다시 질문해 주세요.")
 
 
 message = st.chat_input(
