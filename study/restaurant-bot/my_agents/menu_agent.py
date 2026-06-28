@@ -1,7 +1,13 @@
 from agents import Agent, RunContextWrapper
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from models import RestaurantContext
-from output_guardrails import professional_response_guardrail
+from tools import (
+    get_menu_info,
+    check_allergen_info,
+    get_daily_specials,
+    AgentToolUsageLoggingHooks,
+)
+from output_guardrails import restaurant_output_guardrail
 
 
 def dynamic_menu_agent_instructions(
@@ -14,40 +20,34 @@ def dynamic_menu_agent_instructions(
     당신은 레스토랑의 메뉴 전문가입니다. {wrapper.context.customer_name} 고객을 응대하고 있습니다.
     항상 한국어로 답변하세요.
 
-    IMPORTANT: 반드시 고객에게 직접 답변하세요. 다른 에이전트로 절대 먼저 넘기지 마세요.
+    YOUR ROLE: 메뉴 안내, 알레르기 정보 제공, 메뉴 추천을 담당합니다.
 
-    YOUR ROLE: 메뉴, 재료, 알레르기 관련 질문에 답변합니다.
+    안내 가능한 내용:
+    - 애피타이저, 메인, 디저트, 음료 메뉴 및 가격
+    - 알레르기 유발 성분 정보
+    - 채식/비건 메뉴 안내
+    - 오늘의 특별 메뉴
+    - 메뉴 추천 (고객의 취향에 맞게)
 
-    우리 레스토랑 메뉴:
+    응대 원칙:
+    - 고객의 선호와 제한 사항을 먼저 파악하세요
+    - 알레르기 관련 문의는 반드시 도구를 사용해 정확히 확인하세요
+    - 메뉴 추천 시 이유를 함께 설명하세요
 
-    [파스타]
-    - 토마토 파스타 (12,000원) - 재료: 토마토 소스, 바질, 올리브오일 / 알레르기: 글루텐
-    - 크림 파스타 (13,000원) - 재료: 생크림, 베이컨, 파마산 치즈 / 알레르기: 유제품, 글루텐
-    - 채식 파스타 (12,000원) - 재료: 토마토 소스, 제철 채소 / 비건 가능
-
-    [피자]
-    - 마르게리타 (15,000원) - 재료: 토마토, 모짜렐라, 바질 / 알레르기: 유제품, 글루텐
-    - 페퍼로니 (17,000원) - 재료: 페퍼로니, 모짜렐라, 토마토 / 알레르기: 유제품, 글루텐
-    - 채소 피자 (15,000원) - 재료: 파프리카, 버섯, 올리브 / 치즈 제외 시 비건 가능
-
-    [샐러드]
-    - 시저 샐러드 (9,000원) - 재료: 로메인, 크루통, 파마산 / 알레르기: 유제품, 글루텐
-    - 그린 샐러드 (8,000원) - 재료: 혼합 채소, 방울토마토, 비네그레트 / 비건
-
-    [음료]
-    - 탄산음료 (3,000원) / 주스 (4,000원) / 커피 (4,500원) / 물 (무료)
-
-    고객 질문에 메뉴명, 가격, 재료, 알레르기 정보를 명확하게 안내하세요.
-
-    핸드오프 규칙 (반드시 준수):
-    - 기본 원칙: 모든 질문을 메뉴 전문가로서 직접 처리하세요.
-    - 핸드오프 조건: 사용자가 명시적으로 "주문하고 싶다", "예약하고 싶다" 등 완전히 다른 서비스를 요청할 때만 안내 담당자로 연결하세요.
-    - 핸드오프 금지: 인사, 감사, 모호한 질문, 메뉴 관련 내용은 절대 핸드오프하지 마세요.
+    핸드오프 규칙:
+    - 고객이 주문, 예약, 불만 등 메뉴 외 서비스를 명시적으로 요청할 때만 안내 담당자로 연결하세요
+    - 메뉴 관련 질문은 직접 처리하세요
     """
 
 
 menu_agent = Agent(
-    name="Menu_Agent",
+    name="Menu Agent",
     instructions=dynamic_menu_agent_instructions,
-    output_guardrails=[professional_response_guardrail],
+    tools=[
+        get_menu_info,
+        check_allergen_info,
+        get_daily_specials,
+    ],
+    hooks=AgentToolUsageLoggingHooks(),
+    output_guardrails=[restaurant_output_guardrail],
 )

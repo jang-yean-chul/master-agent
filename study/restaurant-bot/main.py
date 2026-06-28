@@ -12,7 +12,9 @@ client = OpenAI()
 
 restaurant_ctx = RestaurantContext(
     customer_name="고객",
+    table_number=0,
 )
+
 
 if "session" not in st.session_state:
     st.session_state["session"] = SQLiteSession(
@@ -34,9 +36,7 @@ async def paint_history():
                     st.write(message["content"])
                 else:
                     if message["type"] == "message":
-                        for content_item in message["content"]:
-                            if "text" in content_item:
-                                st.write(content_item["text"].replace("$", "\\$"))
+                        st.write(message["content"][0]["text"].replace("$", "\$"))
 
 
 asyncio.run(paint_history())
@@ -64,21 +64,13 @@ async def run_agent(message):
 
                     if event.data.type == "response.output_text.delta":
                         response += event.data.delta
-                        text_placeholder.write(response.replace("$", "\\$"))
+                        text_placeholder.write(response.replace("$", "\$"))
 
                 elif event.type == "agent_updated_stream_event":
 
                     if st.session_state["agent"].name != event.new_agent.name:
 
-                        agent_display_names = {
-                            "Menu_Agent": "메뉴 전문가",
-                            "Order_Agent": "주문 담당자",
-                            "Reservation_Agent": "예약 담당자",
-                            "Triage_Agent": "안내 담당자",
-                            "Complaints_Agent": "고객 불만 담당자",
-                        }
-                        display_name = agent_display_names.get(event.new_agent.name, event.new_agent.name)
-                        st.write(f"🤖 {display_name}에게 연결합니다...")
+                        text_placeholder.write(f"🤖 {st.session_state['agent'].name}에서 {event.new_agent.name}(으)로 연결합니다...")
 
                         st.session_state["agent"] = event.new_agent
 
@@ -89,19 +81,16 @@ async def run_agent(message):
 
         except InputGuardrailTripwireTriggered:
             st.write("저는 레스토랑 관련 질문만 도와드릴 수 있어요. 메뉴 확인, 주문, 예약을 도와드릴게요.")
-        except OutputGuardrailTripwireTriggered:
-            text_placeholder.empty()
-            st.write("죄송합니다. 응답을 다시 확인해 주시기 바랍니다. 다시 질문해 주세요.")
 
+        except OutputGuardrailTripwireTriggered:
+            st.write("죄송합니다. 응답을 다시 확인해 주시기 바랍니다. 다시 질문해 주세요.")
+            st.session_state["text_placeholder"].empty()
 
 message = st.chat_input(
     "무엇을 도와드릴까요?",
 )
 
 if message:
-
-    if "text_placeholder" in st.session_state:
-        st.session_state["text_placeholder"].empty()
 
     if message:
         with st.chat_message("human"):
