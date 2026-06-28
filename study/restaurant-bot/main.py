@@ -102,4 +102,5 @@ with st.sidebar:
     reset = st.button("대화 초기화")
     if reset:
         asyncio.run(session.clear_session())
+        st.session_state["agent"] = triage_agent
     st.write(asyncio.run(session.get_items()))
