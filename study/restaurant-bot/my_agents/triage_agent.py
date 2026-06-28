@@ -9,7 +9,7 @@ from agents import (
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from agents.extensions import handoff_filters
-from models import RestaurantContext, InputGuardRailOutput, HandoffData
+from models import RestaurantContext, InputGuardRailOutput
 from my_agents.menu_agent import menu_agent
 from my_agents.order_agent import order_agent
 from my_agents.reservation_agent import reservation_agent
@@ -58,6 +58,9 @@ def dynamic_triage_agent_instructions(
     agent: Agent[RestaurantContext],
 ):
     table_info = f"테이블 {wrapper.context.table_number}번" if wrapper.context.table_number else ""
+    avoid_note = ""
+    if wrapper.context.last_specialist:
+        avoid_note = f"\n    ⚠️ 방금 {wrapper.context.last_specialist}에서 이 대화가 넘어왔습니다. 절대 {wrapper.context.last_specialist}로 다시 라우팅하지 마세요. 다른 에이전트로 연결하거나, 고객에게 직접 안내하세요."
 
     return f"""
     {RECOMMENDED_PROMPT_PREFIX}
@@ -99,29 +102,19 @@ def dynamic_triage_agent_instructions(
     4. 해당 에이전트로 핸드오프합니다
 
     요청이 불분명하면 1-2가지 질문으로 명확히 파악한 후 연결하세요.
+    {avoid_note}
     """
 
 
-def handle_handoff(
-    wrapper: RunContextWrapper[RestaurantContext],
-    input_data: HandoffData,
-):
-    with st.sidebar:
-        st.write(
-            f"""
-            Handing off to {input_data.to_agent_name}
-            Reason: {input_data.reason}
-            Issue Type: {input_data.issue_type}
-            Description: {input_data.issue_description}
-        """
-        )
-
-
 def make_handoff(agent):
+    def on_handoff(wrapper: RunContextWrapper[RestaurantContext]):
+        wrapper.context.last_specialist = ""
+        with st.sidebar:
+            st.write(f"Triage → {agent.name}")
+
     return handoff(
         agent=agent,
-        on_handoff=handle_handoff,
-        input_type=HandoffData,
+        on_handoff=on_handoff,
         input_filter=handoff_filters.remove_all_tools,
     )
 
@@ -143,6 +136,7 @@ triage_agent = Agent(
 
 def make_specialist_to_triage_handoff(specialist_name: str):
     def on_handoff(wrapper: RunContextWrapper[RestaurantContext]):
+        wrapper.context.last_specialist = specialist_name
         with st.sidebar:
             st.write(f"🔄 {specialist_name} → Triage Agent")
 
