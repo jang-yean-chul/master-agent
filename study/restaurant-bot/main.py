@@ -59,6 +59,8 @@ async def run_agent(message):
                 context=restaurant_ctx,
             )
 
+            handoff_count = 0
+
             async for event in stream.stream_events():
                 if event.type == "raw_response_event":
 
@@ -69,6 +71,12 @@ async def run_agent(message):
                 elif event.type == "agent_updated_stream_event":
 
                     if st.session_state["agent"].name != event.new_agent.name:
+
+                        handoff_count += 1
+                        if handoff_count > 4:
+                            st.session_state["agent"] = triage_agent
+                            text_placeholder.write("죄송합니다. 담당자 연결 중 문제가 발생했습니다. 다시 질문해 주세요.")
+                            break
 
                         text_placeholder.write(f"🤖 {st.session_state['agent'].name}에서 {event.new_agent.name}(으)로 연결합니다...")
 
