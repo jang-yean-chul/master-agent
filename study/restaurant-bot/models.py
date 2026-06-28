@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class RestaurantContext(BaseModel):
     customer_name: str = "고객"
     table_number: int = 0
-    last_specialist: str = ""
+    visited_specialists: str = ""
 
 
 class InputGuardRailOutput(BaseModel):

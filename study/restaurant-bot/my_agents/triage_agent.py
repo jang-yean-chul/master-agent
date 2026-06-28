@@ -59,8 +59,9 @@ def dynamic_triage_agent_instructions(
 ):
     table_info = f"테이블 {wrapper.context.table_number}번" if wrapper.context.table_number else ""
     avoid_note = ""
-    if wrapper.context.last_specialist:
-        avoid_note = f"\n    ⚠️ 방금 {wrapper.context.last_specialist}에서 이 대화가 넘어왔습니다. 절대 {wrapper.context.last_specialist}로 다시 라우팅하지 마세요. 다른 에이전트로 연결하거나, 고객에게 직접 안내하세요."
+    if wrapper.context.visited_specialists:
+        visited = wrapper.context.visited_specialists
+        avoid_note = f"\n    ⚠️ 이미 방문한 담당자: {visited}. 이 담당자들로는 절대 다시 라우팅하지 마세요. 다른 담당자로 연결하거나, 고객에게 직접 답변하세요."
 
     return f"""
     {RECOMMENDED_PROMPT_PREFIX}
@@ -94,6 +95,7 @@ def dynamic_triage_agent_instructions(
     - 직원 서비스에 대한 불만
     - 환불 또는 보상 요청
     - 부정적인 경험 공유
+    - 매니저/담당자 연결 요청 ("담당자 나와", "매니저 불러줘" 등)
 
     처리 순서:
     1. 고객의 요청을 파악합니다
@@ -108,7 +110,6 @@ def dynamic_triage_agent_instructions(
 
 def make_handoff(agent):
     def on_handoff(wrapper: RunContextWrapper[RestaurantContext]):
-        wrapper.context.last_specialist = ""
         with st.sidebar:
             st.write(f"Triage → {agent.name}")
 
@@ -136,7 +137,8 @@ triage_agent = Agent(
 
 def make_specialist_to_triage_handoff(specialist_name: str):
     def on_handoff(wrapper: RunContextWrapper[RestaurantContext]):
-        wrapper.context.last_specialist = specialist_name
+        current = wrapper.context.visited_specialists
+        wrapper.context.visited_specialists = f"{current},{specialist_name}" if current else specialist_name
         with st.sidebar:
             st.write(f"🔄 {specialist_name} → Triage Agent")
 
