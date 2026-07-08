@@ -35,6 +35,7 @@ remote_app = vertexai.agent_engines.create(
         "litellm",
         "openai",
         "httpx",
+        "pillow",
     ],
     extra_packages=["storybook_agent"],
     env_vars={
