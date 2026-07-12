@@ -70,6 +70,9 @@ class StoryState(TypedDict, total=False):
     target_words: list[str]   # 학습 단어 5~10개
     child_age: int            # 아이 나이 → 작문 스타일 분기 (조건부 엣지 ②)
     theme: str                # 테마 (예: 숲속 모험)
+    hero: str                 # 주인공 설정 (예: "아기 토끼 토토") — 캐릭터 일관성 기준
+    character_sheet: str      # plan_story가 만든 주인공 외형 묘사(영어 1문장)
+                              # → 모든 삽화 프롬프트가 이 문장으로 시작 (그림 간 캐릭터 고정)
     # 중간 산출물
     word_check: dict          # check_words 툴 결과 {ok, problems}
     story_plan: str           # plan_story 출력
