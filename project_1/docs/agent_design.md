@@ -1,6 +1,6 @@
 # WordiTale (워디테일) — 에이전트 설계 문서
 
-> 유아 단어 학습용 맞춤 동화 생성 에이전트 · Step 1 설계 (2026-07-09)
+> 유아 단어 학습용 맞춤 동화 생성 에이전트 · Step 1 설계 (2026-07-09) · Step 3 확장 (2026-07-12)
 
 ## 1. 이름
 
@@ -19,51 +19,96 @@
 | 1 | 스토리 플래닝 | 단어·연령·테마를 받아 유아 눈높이의 줄거리 개요 생성 |
 | 2 | 페이지별 텍스트 생성 | 5~8페이지, 페이지당 1~2문장, 목표 단어를 페이지에 배치 |
 | 3 | 자동 검증 + 재작성 루프 | 단어 포함 여부·페이지 수·문장 길이를 규칙 기반 검사, 실패 시 재작성 (최대 N회) |
-| 4 | (확장) TTS 스크립트 출력 | 부모 음성 합성 엔진에 넘길 페이지별 낭독 텍스트 포맷 |
+| 4 | 단어 적합성 검사 (툴①) | 금지어·글자 수·한글 여부를 검사해 부적합 입력은 생성 전에 거절 |
+| 5 | 연령별 작문 스타일 | 사용자 입력(나이)에 따라 영아용(≤3세, 의성어 1문장)과 표준(≥4세) 경로 분기 |
+| 6 | 삽화 프롬프트 병렬 생성 | Send API로 페이지 수만큼 팬아웃해 페이지별 삽화 지시문을 동시 생성 |
+| 7 | 동화책 파일 저장 (툴②) | 완성본(텍스트+삽화 프롬프트)을 output/*.md로 저장 |
+| 8 | 아이별 학습 메모리 | 체크포인터 + thread_id로 배운 단어를 누적, 다음 동화에 복습 단어로 반영 |
+| 9 | (확장) TTS 스크립트 출력 | 부모 음성 합성 엔진에 넘길 페이지별 낭독 텍스트 포맷 |
 
 ※ 부모 음성 학습(voice cloning)은 LLM 그래프가 아닌 별도 음성 서비스 영역 → 이 그래프의 출력(페이지 텍스트)을 입력으로 받는 후속 파이프라인으로 분리.
 
-## 4. 그래프 구조
+## 4. 그래프 구조 (Step 3 확장)
 
 ```
 START
   │
   ▼
-[plan_story]  단어/연령/테마 → 줄거리 개요
+[check_words]  툴①: 단어 적합성 검사 (금지어/한글/글자수)
   │
-  ▼
-[write_pages] 개요 → 페이지별 텍스트 (5~8p)
+  ├─ 부적합 ──▶ [reject_input] 거절 사유 안내 ──▶ END     ◀ 조건부 엣지 ①
   │
-  ▼
-[validate_story] 규칙 검사 (단어 포함, 페이지 수, 길이)
-  │
-  ├─ 실패 & 재시도 가능 ──▶ [write_pages] (루프, 최대 2회)
-  │
-  └─ 통과 or 재시도 소진 ──▶ [finalize] 최종 산출물 정리
-                                │
-                                ▼
-                               END
+  └─ 통과 ──▶ [plan_story]  단어/연령/테마(+복습 단어) → 줄거리 개요
+                │
+                ├─ child_age ≤ 3 ──▶ [write_pages_toddler]  ◀ 조건부 엣지 ②
+                │                     의성어 중심, 페이지당 1문장      (사용자 입력 분기)
+                └─ child_age ≥ 4 ──▶ [write_pages_standard]
+                                      스토리 중심, 페이지당 1~2문장
+                                        │
+                                        ▼
+              [validate_story] 규칙 검사 (단어 포함, 페이지 수, 길이)
+                │
+                ├─ 실패 & 재시도 가능 ──▶ 나이에 맞는 write 노드 (루프, 최대 2회)  ◀ 조건부 엣지 ③
+                │
+                └─ 통과 or 재시도 소진 ──▶ [finalize] 상태 확정 + 배운 단어 메모리 누적
+                                             │
+                                             ▼ Send API 팬아웃 (페이지 수만큼 병렬)
+                                  [gen_illust_prompt] × N  페이지별 삽화 프롬프트
+                                             │
+                                             ▼
+                                  [save_storybook]  툴②: output/*.md 저장
+                                             │
+                                             ▼
+                                            END
 ```
 
 ## 5. State 설계
 
 ```python
 class StoryState(TypedDict, total=False):
-    target_words: list[str]   # 입력: 학습 단어 5~10개
-    child_age: int            # 입력: 아이 나이
-    theme: str                # 입력: 테마 (예: 숲속 모험)
+    # 입력
+    target_words: list[str]   # 학습 단어 5~10개
+    child_age: int            # 아이 나이 → 작문 스타일 분기 (조건부 엣지 ②)
+    theme: str                # 테마 (예: 숲속 모험)
+    # 중간 산출물
+    word_check: dict          # check_words 툴 결과 {ok, problems}
     story_plan: str           # plan_story 출력
-    pages: list[Page]         # write_pages 출력 [{page, text}]
+    pages: list[Page]         # write_pages_* 출력 [{page, text}]
+    illust_prompts: Annotated[list[IllustPrompt], _extend_or_reset]
+                              # Send 병렬 결과 (리듀서로 병합, None이면 초기화)
+    # 검증/제어
     issues: list[str]         # validate_story가 찾은 문제
     retry_count: int          # 재작성 횟수
-    status: str               # ok / failed_validation
+    status: str               # ok / failed_validation / rejected
+    saved_path: str           # save_storybook 툴이 저장한 경로
+    # 메모리 (thread별 누적)
+    learned_words: Annotated[list[str], _union_words]
+                              # 배운 단어 (중복 없이 union, 다음 동화의 복습 단어로 활용)
 ```
+
+## 5-1. 툴 · 병렬 · 메모리 설계
+
+| 요소 | 구현 | 비고 |
+|------|------|------|
+| 툴① `check_words` | `@tool` 커스텀 툴 — 개수/한글/길이/금지어 검사 | 생성 전 입력 게이트 |
+| 툴② `save_storybook` | `@tool` 파일 툴 — 완성본을 `output/<제목>.md`로 저장 | Step 5 TTS 포맷의 기반 |
+| 병렬 (Send API) | `finalize` 뒤 페이지 수만큼 `Send("gen_illust_prompt", …)` 팬아웃 | 삽화 프롬프트는 페이지 간 독립이라 병렬에 적합. 추후 실제 이미지 생성 API 병렬 호출로 재활용 |
+| 메모리 | `MemorySaver` 체크포인터 + 아이별 `thread_id` | `learned_words`가 union 리듀서로 누적 → `plan_story`가 복습 단어 1~2개를 다음 동화에 등장시킴 |
+| LLM 선택 | `OPENAI_API_KEY` → OpenAI(gpt-4o-mini), `ANTHROPIC_API_KEY` → Claude, 없으면 mock | 그래프 구조 개발/시연은 키 없이 가능 |
 
 ## 6. 주요 엣지 케이스 (설계에 반영됨)
 
-1. 단어 수 5개 미만 / 10개 초과 → 입력 단계에서 즉시 에러
-2. 단어 수(최대 10) > 페이지 수(최대 8) → 한 페이지에 단어 2개 배치 로직
-3. 생성문에 목표 단어 누락 → validator가 잡아 재작성 루프
-4. 한국어 조사 결합("사과를", "바람이") → 부분 문자열 매칭으로 검출
-5. 무한 재작성 → retry_count 상한(2회) 후 경고와 함께 종료
-6. 페이지당 텍스트 과다 → 페이지당 최대 글자 수 검사
+1. 단어 수 5개 미만 / 10개 초과 → check_words 툴이 생성 전에 거절
+2. 부적합 단어(금지어, 비한글, 과도한 길이) → check_words 툴이 사유와 함께 거절
+3. 단어 수(최대 10) > 페이지 수(최대 8) → 한 페이지에 단어 2개 배치 로직
+4. 생성문에 목표 단어 누락 → validator가 잡아 재작성 루프
+5. 한국어 조사 결합("사과를", "바람이") → 부분 문자열 매칭으로 검출
+6. 무한 재작성 → retry_count 상한(2회) 후 경고와 함께 종료
+7. 페이지당 텍스트 과다 → 페이지당 최대 글자 수 검사
+8. 같은 thread에서 새 동화 생성 → plan_story가 retry_count/issues/illust_prompts를 초기화 (learned_words만 누적 유지)
+
+## 7. 비용 계획 (2026-07 확정)
+
+1. **1차 — 텍스트만 테스트**: gpt-4o-mini 기준 동화 1편 ≈ $0.001, 사실상 무료. 구조 디버깅은 mock 모드로 키 없이.
+2. **2차 — 저가 이미지 테스트**: gpt-image 계열 Low 품질(장당 ~$0.011) → 삽화 7장 기준 권당 ~$0.08.
+3. **최종 — Medium 품질 출력**: 장당 ~$0.042 → 권당 ~$0.30.

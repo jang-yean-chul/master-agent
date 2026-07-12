@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-1C3C3C?logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![Claude](https://img.shields.io/badge/Claude-API-D97757?logo=anthropic&logoColor=white)](https://docs.claude.com/)
-[![Status](https://img.shields.io/badge/Status-Step_2_완료-success)]()
+[![Status](https://img.shields.io/badge/Status-Step_3_완료-success)]()
 
 </div>
 
@@ -32,20 +32,40 @@ LLM은 "단어를 모두 넣어줘" 같은 제약을 종종 어깁니다.
 
 ```mermaid
 flowchart TD
-    S([START]) --> A[plan_story<br/><small>줄거리 개요 생성</small>]
-    A --> B[write_pages<br/><small>5~8페이지 텍스트 생성</small>]
-    B --> C{validate_story<br/><small>단어 포함·분량·길이 검사</small>}
-    C -- "❌ 실패 · 재시도 ≤ 2회" --> B
-    C -- "✅ 통과 or 재시도 소진" --> D[finalize<br/><small>최종 산출물 정리</small>]
-    D --> E([END])
+    S([START]) --> T1[check_words 🔧툴①<br/><small>단어 적합성 검사</small>]
+    T1 -- "🚫 부적합" --> R[reject_input<br/><small>거절 사유 안내</small>] --> E1([END])
+    T1 -- "✅ 통과" --> A[plan_story<br/><small>줄거리 개요 + 복습 단어</small>]
+    A -- "👶 age ≤ 3" --> B1[write_pages_toddler<br/><small>의성어 · 1문장</small>]
+    A -- "🧒 age ≥ 4" --> B2[write_pages_standard<br/><small>스토리 · 1~2문장</small>]
+    B1 --> C{validate_story<br/><small>단어 포함·분량·길이 검사</small>}
+    B2 --> C
+    C -- "❌ 실패 · 재시도 ≤ 2회" --> A2{나이별 재작성} --> B1 & B2
+    C -- "✅ 통과 or 재시도 소진" --> D[finalize<br/><small>배운 단어 메모리 누적</small>]
+    D -- "⚡ Send 병렬 ×N" --> P[gen_illust_prompt<br/><small>페이지별 삽화 프롬프트</small>]
+    P --> T2[save_storybook 🔧툴②<br/><small>output/*.md 저장</small>]
+    T2 --> E2([END])
 
+    style T1 fill:#fce7f3,stroke:#ec4899,color:#831843
+    style T2 fill:#fce7f3,stroke:#ec4899,color:#831843
     style A fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
-    style B fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style B1 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style B2 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
     style C fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    style P fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
     style D fill:#dcfce7,stroke:#22c55e,color:#14532d
 ```
 
-상세 설계(State 정의, 엣지 케이스 분석)는 📄 [docs/agent_design.md](docs/agent_design.md) 참고.
+**과제 요건 매핑**
+
+| 요건 | 구현 |
+|------|------|
+| 노드 3개 이상 | 9개 (check_words, reject_input, plan_story, write_pages_toddler/standard, validate_story, finalize, gen_illust_prompt, save_storybook) |
+| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따른 작문 스타일 분기**, ③ 검증 재작성 루프 |
+| Tool 연동 | 2개 — `check_words`(커스텀 검사 툴), `save_storybook`(파일 저장 툴) |
+| 병렬 실행 (Send API) | finalize → 페이지 수만큼 `gen_illust_prompt` 팬아웃 (5~8개 동시) |
+| 메모리 | `MemorySaver` + 아이별 `thread_id` — 배운 단어 누적, 다음 동화에 복습 단어로 재등장 |
+
+상세 설계(State 정의, 엣지 케이스 분석, 비용 계획)는 📄 [docs/agent_design.md](docs/agent_design.md) 참고.
 
 ## 🗺️ 진행 단계
 
@@ -53,10 +73,11 @@ flowchart TD
 |:---:|------|:---:|
 | **Step 1** | 에이전트 설계 — 이름 · 목적 · 핵심 기능 · 그래프 구조 | ✅ 완료 |
 | **Step 2** | LangGraph 기초 구축 — 커스텀 State · 노드 4개 · 조건부 엣지(재작성 루프) | ✅ 완료 |
-| **Step 3** | 실제 Claude API 연동 및 생성 품질 테스트 | ⬜ 예정 |
-| **Step 4** | 페이지별 삽화 프롬프트 생성 노드 추가 | ⬜ 예정 |
-| **Step 5** | 부모 음성 TTS 스크립트 포맷 설계 및 음성 파이프라인 연동 | ⬜ 예정 |
-| **Step 6** | 앱 UI 연동 (동화책 뷰어 + 낭독 재생) | ⬜ 예정 |
+| **Step 3** | 툴 2개 연동 · 사용자 입력(나이) 분기 · Send 병렬 삽화 프롬프트 · 메모리(배운 단어 누적) | ✅ 완료 |
+| **Step 4** | 실제 API(OpenAI/Claude) 텍스트 생성 품질 테스트 | ⬜ 예정 |
+| **Step 5** | 삽화 이미지 생성 연동 — 1차 Low 품질 테스트 → 최종 Medium 품질 출력 | ⬜ 예정 |
+| **Step 6** | 부모 음성 TTS 스크립트 포맷 설계 및 음성 파이프라인 연동 | ⬜ 예정 |
+| **Step 7** | 앱 UI 연동 (동화책 뷰어 + 낭독 재생) | ⬜ 예정 |
 
 ## 📁 폴더 구조
 
@@ -65,9 +86,10 @@ project_1/
 ├── README.md              # 프로젝트 소개 (이 문서)
 ├── requirements.txt       # 의존성
 ├── docs/
-│   └── agent_design.md    # Step 1: 에이전트 설계 문서
-└── src/
-    └── worditale_agent.py # Step 2: LangGraph 에이전트
+│   └── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
+├── src/
+│   └── worditale_agent.py # LangGraph 에이전트 (노드 9개 · 툴 2개 · Send 병렬 · 메모리)
+└── output/                # 생성된 동화책 .md (자동 생성, git 제외)
 ```
 
 ## 🚀 실행 방법
@@ -77,20 +99,29 @@ pip install -r requirements.txt
 python src/worditale_agent.py
 ```
 
-> `ANTHROPIC_API_KEY` 환경변수가 있으면 실제 Claude API로 생성하고,
-> 없으면 **mock**(규칙 기반 더미) 로직으로 동작해 키 없이도 바로 실행됩니다.
+> `OPENAI_API_KEY`가 있으면 OpenAI(gpt-4o-mini), `ANTHROPIC_API_KEY`가 있으면 Claude로 생성하고,
+> 둘 다 없으면 **mock**(규칙 기반 더미) 로직으로 동작해 키 없이도 바로 실행됩니다.
 
-**실행 예시** (mock 모드 — 검증 실패 → 재작성 루프 시연 포함):
+**실행 예시** (mock 모드 — 데모 3종: 재작성 루프 / 나이 분기·메모리 / 입력 거절):
 
 ```
 === WordiTale 실행 (LLM 모드: mock) ===
 
-[줄거리] 아기 토끼 '토토'가 숲속 모험을 떠나요. ...
-
+--- 동화 1: 4세 · 숲속 모험 (재작성 루프 시연) ---
   p1. 아침 해가 뜨자 아기 토끼 토토가 폴짝 일어났어요.
-  p2. 토토는 사과를 만나 활짝 웃었어요.
   ...
-  p7. 토토는 달팽이를 만나 활짝 웃었어요. 토토는 엄마 품에서 새근새근 잠들었답니다.
-
 [검증] 재작성 1회, 최종 상태: ok
+[삽화 프롬프트] 7개 병렬 생성
+[저장] ...\output\숲속 모험 이야기.md
+[메모리] 지금까지 배운 단어: ['구름', '나비', '달팽이', '무지개', '바람', '사과']
+
+--- 동화 2: 3세 · 바닷속 여행 (영아 스타일 + 복습 단어) ---
+[줄거리] ... 지난번에 배운 구름, 나비도 반갑게 다시 만나요. ...
+  p2. 물고기를 봐요. 폴짝폴짝!
+  ...
+[메모리] 지금까지 배운 단어: ['거북이', '구름', '나비', ... 11개 누적]
+
+--- 동화 3: 부적합 단어 → 입력 거절 시연 ---
+[상태] rejected
+[사유] ["'칼'은(는) 유아 동화에 부적합한 단어입니다"]
 ```

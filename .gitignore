@@ -10,6 +10,9 @@ wheels/
 .venv
 .env
 
+# Generated storybooks (WordiTale)
+project_1/output/
+
 # Database files
 *.db
 *.db-shm
