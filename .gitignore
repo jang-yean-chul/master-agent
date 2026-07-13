@@ -13,6 +13,9 @@ wheels/
 # Generated storybooks (WordiTale)
 project_1/output/
 
+# Family voice recordings (WordiTale) — personal data, never commit
+project_1/voices/
+
 # Database files
 *.db
 *.db-shm
