@@ -28,7 +28,7 @@
 
 ※ 부모 음성 학습(voice cloning)은 LLM 그래프가 아닌 별도 음성 서비스 영역 → 이 그래프의 출력(페이지 텍스트)을 입력으로 받는 후속 파이프라인으로 분리.
 
-## 4. 그래프 구조 (Step 3 확장)
+## 4. 그래프 구조 (워크플로우 3패턴: 체이닝 + Orchestrator-Workers + 병렬)
 
 ```
 START
@@ -38,17 +38,17 @@ START
   │
   ├─ 부적합 ──▶ [reject_input] 거절 사유 안내 ──▶ END     ◀ 조건부 엣지 ①
   │
-  └─ 통과 ──▶ [plan_story]  단어/연령/테마(+복습 단어) → 줄거리 개요
+  └─ 통과 ──▶ [plan_story]  오케스트레이터
+                │   줄거리 + 페이지 수·단어 배치·페이지별 장면(브리프)을 동적 계획
                 │
-                ├─ child_age ≤ 3 ──▶ [write_pages_toddler]  ◀ 조건부 엣지 ②
-                │                     의성어 중심, 페이지당 1문장      (사용자 입력 분기)
-                └─ child_age ≥ 4 ──▶ [write_pages_standard]
-                                      스토리 중심, 페이지당 1~2문장
-                                        │
+                │  Send 팬아웃 ×N (나이로 워커 종류 선택)   ◀ 조건부 엣지 ② (사용자 입력 분기)
+                ├─ child_age ≤ 3 ──▶ [write_page_toddler] ×N  의성어 워커 (병렬)
+                └─ child_age ≥ 4 ──▶ [write_page_standard] ×N  스토리 워커 (병렬)
+                                        │  (pages는 페이지 번호로 병합되는 리듀서)
                                         ▼
-              [validate_story] 규칙 검사 (단어 포함, 페이지 수, 길이)
+              [validate_story] 규칙 검사 (단어 포함, 페이지 수, 길이) — 체이닝의 게이트
                 │
-                ├─ 실패 & 재시도 가능 ──▶ 나이에 맞는 write 노드 (루프, 최대 2회)  ◀ 조건부 엣지 ③
+                ├─ 실패 & 재시도 가능 ──▶ 워커 재팬아웃 (루프, 최대 2회)  ◀ 조건부 엣지 ③
                 │
                 └─ 통과 or 재시도 소진 ──▶ [finalize] 상태 확정 + 배운 단어 메모리 누적
                                              │
@@ -62,6 +62,15 @@ START
                                             END
 ```
 
+### 4-1. 브리프 설계 — 병렬 작성에서 문장 연결을 지키는 방법
+
+원칙: **서사는 오케스트레이터가 전부 결정하고, 워커는 자기 장면의 문장만 렌더링한다.**
+
+- 오케스트레이터가 만드는 PageBrief: `{page, role(도입/전개/마무리), scene(장면 한 줄), words(배치 단어)}` — scene은 서로 겹치지 않게 사건 순서대로
+- 워커가 받는 것: 전체 줄거리 + 자기 브리프 + **직전/다음 페이지 장면 요약**
+- 워커 규칙(중복 방지의 핵심): 앞뒤 장면은 "참고만" — 직전 장면은 이미 쓰였으니 재서술 금지, 다음 장면은 다음 페이지 몫이니 미리 서술 금지. 문체(해요체)와 주인공 지칭(이름만, 수식어 반복 금지)도 통일
+- 안전망: 오케스트레이터 출력이 페이지 범위를 벗어나면 규칙 기반 브리프로 대체, 빠뜨린 단어는 마지막 페이지에 자동 배치. 이후 validate_story 게이트가 최종 검증
+
 ## 5. State 설계
 
 ```python
@@ -73,6 +82,9 @@ class StoryState(TypedDict, total=False):
     hero: str                 # 주인공 설정 (예: "아기 토끼 토토") — 캐릭터 일관성 기준
     character_sheet: str      # plan_story가 만든 주인공 외형 묘사(영어 1문장)
                               # → 모든 삽화 프롬프트가 이 문장으로 시작 (그림 간 캐릭터 고정)
+    page_briefs: list[PageBrief]  # 오케스트레이터의 페이지별 작업 지시서
+    # pages: Annotated[list[Page], _merge_pages]
+                              # 워커 병렬 결과 — 페이지 번호로 병합 (재작성 시 덮어쓰기)
     # 중간 산출물
     word_check: dict          # check_words 툴 결과 {ok, problems}
     story_plan: str           # plan_story 출력
@@ -95,7 +107,8 @@ class StoryState(TypedDict, total=False):
 |------|------|------|
 | 툴① `check_words` | `@tool` 커스텀 툴 — 개수/한글/길이/금지어 검사 | 생성 전 입력 게이트 |
 | 툴② `save_storybook` | `@tool` 파일 툴 — 완성본을 `output/<제목>.md`로 저장 | Step 5 TTS 포맷의 기반 |
-| 병렬 (Send API) | `finalize` 뒤 페이지 수만큼 `Send("gen_illust_prompt", …)` 팬아웃 | 삽화 프롬프트는 페이지 간 독립이라 병렬에 적합. 추후 실제 이미지 생성 API 병렬 호출로 재활용 |
+| 병렬 (Send API) | ① `plan_story` 뒤 페이지 워커 ×N ② `finalize` 뒤 `Send("gen_illust_prompt", …)` ×N | 페이지 작성은 브리프 기반이라 독립적, 삽화 프롬프트도 페이지 간 독립. 추후 실제 이미지 생성 API 병렬 호출로 재활용 |
+| Orchestrator-Workers | `plan_story`가 페이지 수·단어 배치·브리프를 동적 계획 → 워커가 병렬 렌더링 | 브리프 설계는 §4-1 참고 |
 | 메모리 | `MemorySaver` 체크포인터 + 아이별 `thread_id` | `learned_words`가 union 리듀서로 누적 → `plan_story`가 복습 단어 1~2개를 다음 동화에 등장시킴 |
 | LLM 선택 | `OPENAI_API_KEY` → OpenAI(gpt-4o-mini), `ANTHROPIC_API_KEY` → Claude, 없으면 mock | 그래프 구조 개발/시연은 키 없이 가능 |
 

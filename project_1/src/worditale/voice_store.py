@@ -20,7 +20,8 @@ MAX_SAMPLES_PER_ROLE = 2
 MIN_SECONDS, MAX_SECONDS = 30, 300   # 허용 길이 (초)
 TARGET_SECONDS = 120                 # 권장 길이 — 약 2분
 
-VOICES_DIR = Path(__file__).resolve().parent.parent / "voices"
+# src/worditale/voice_store.py → parents[2] == project_1
+VOICES_DIR = Path(__file__).resolve().parents[2] / "voices"
 
 
 def _role_dir(role: str) -> Path:

@@ -34,12 +34,12 @@ LLM은 "단어를 모두 넣어줘" 같은 제약을 종종 어깁니다.
 flowchart TD
     S([START]) --> T1[check_words 🔧툴①<br/><small>단어 적합성 검사</small>]
     T1 -- "🚫 부적합" --> R[reject_input<br/><small>거절 사유 안내</small>] --> E1([END])
-    T1 -- "✅ 통과" --> A[plan_story<br/><small>줄거리 개요 + 복습 단어</small>]
-    A -- "👶 age ≤ 3" --> B1[write_pages_toddler<br/><small>의성어 · 1문장</small>]
-    A -- "🧒 age ≥ 4" --> B2[write_pages_standard<br/><small>스토리 · 1~2문장</small>]
+    T1 -- "✅ 통과" --> A[plan_story 🧠오케스트레이터<br/><small>줄거리 + 페이지별 브리프 설계</small>]
+    A -- "👶 age ≤ 3 · ⚡Send ×N" --> B1[write_page_toddler 워커<br/><small>의성어 · 1문장 · 병렬</small>]
+    A -- "🧒 age ≥ 4 · ⚡Send ×N" --> B2[write_page_standard 워커<br/><small>스토리 · 1~2문장 · 병렬</small>]
     B1 --> C{validate_story<br/><small>단어 포함·분량·길이 검사</small>}
     B2 --> C
-    C -- "❌ 실패 · 재시도 ≤ 2회" --> A2{나이별 재작성} --> B1 & B2
+    C -- "❌ 실패 · 재시도 ≤ 2회" --> A2{워커 재팬아웃} --> B1 & B2
     C -- "✅ 통과 or 재시도 소진" --> D[finalize<br/><small>배운 단어 메모리 누적</small>]
     D -- "⚡ Send 병렬 ×N" --> P[gen_illust_prompt<br/><small>페이지별 삽화 프롬프트</small>]
     P --> T2[save_storybook 🔧툴②<br/><small>output/*.md 저장</small>]
@@ -55,17 +55,26 @@ flowchart TD
     style D fill:#dcfce7,stroke:#22c55e,color:#14532d
 ```
 
+**아키텍처: 워크플로우 3패턴 조합** (Anthropic *Building Effective Agents* 기준)
+
+| 패턴 | 구현 |
+|------|------|
+| 프롬프트 체이닝 | 기획 → 작성 → **검증(게이트)** → 마무리. 검증 실패 시 재작성 루프 |
+| Orchestrator-Workers | `plan_story`(오케스트레이터)가 페이지 수·단어 배치·페이지별 장면(브리프)을 **동적으로 계획** → 페이지 워커들이 브리프대로 병렬 작성. 각 워커는 전체 줄거리 + 자기 브리프 + **앞뒤 페이지 장면 요약**을 받아 이음새가 어긋나지 않음 |
+| 병렬 처리 (Send API) | 페이지 작성 워커 ×N + 삽화 프롬프트 생성 ×N 팬아웃 |
+
 **과제 요건 매핑**
 
 | 요건 | 구현 |
 |------|------|
-| 노드 3개 이상 | 9개 (check_words, reject_input, plan_story, write_pages_toddler/standard, validate_story, finalize, gen_illust_prompt, save_storybook) |
-| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따른 작문 스타일 분기**, ③ 검증 재작성 루프 |
+| 노드 3개 이상 | 9개 (check_words, reject_input, plan_story, write_page_toddler/standard, validate_story, finalize, gen_illust_prompt, save_storybook) |
+| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따라 워커 종류 선택 + Send 팬아웃**, ③ 검증 재작성 루프(워커 재팬아웃) |
 | Tool 연동 | 2개 — `check_words`(커스텀 검사 툴), `save_storybook`(파일 저장 툴) |
-| 병렬 실행 (Send API) | finalize → 페이지 수만큼 `gen_illust_prompt` 팬아웃 (5~8개 동시) |
+| 병렬 실행 (Send API) | 페이지 워커 ×N (plan_story 뒤) + `gen_illust_prompt` ×N (finalize 뒤) |
 | 메모리 | `MemorySaver` + 아이별 `thread_id` — 배운 단어 누적, 다음 동화에 복습 단어로 재등장 |
 
-상세 설계(State 정의, 엣지 케이스 분석, 비용 계획)는 📄 [docs/agent_design.md](docs/agent_design.md) 참고.
+상세 설계(State 정의, 엣지 케이스 분석, 비용 계획)는 📄 [docs/agent_design.md](docs/agent_design.md),
+프로젝트 전체 현황·구조·주의사항은 📋 [docs/HANDOVER.md](docs/HANDOVER.md) 참고.
 
 ## 🗺️ 진행 단계
 
@@ -87,10 +96,18 @@ project_1/
 ├── requirements.txt       # 의존성
 ├── app.py                 # Streamlit 대화형 UI (채팅 + 노드/툴 실행 시각화)
 ├── docs/
-│   └── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
+│   ├── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
+│   └── HANDOVER.md        # 인수인계 문서 (현황·구조·실행법·주의사항)
 ├── src/
-│   ├── worditale_agent.py # LangGraph 에이전트 (노드 9개 · 툴 2개 · Send 병렬 · 메모리)
-│   └── voice_store.py     # 가족 목소리 mp3 샘플 저장소 (역할별 2개, 길이 검증)
+│   └── worditale/         # 에이전트 패키지
+│       ├── config.py      #   비즈니스 규칙 상수 · 주인공 기본값
+│       ├── state.py       #   그래프 State(TypedDict) + 리듀서
+│       ├── llm.py         #   LLM 클라이언트 (OpenAI/Claude/mock 자동 선택)
+│       ├── tools.py       #   툴① check_words · 툴② save_storybook
+│       ├── nodes.py       #   노드 함수 (오케스트레이터/워커/검증/삽화/저장)
+│       ├── graph.py       #   라우팅 + 그래프 조립 (+ 메모리 체크포인터)
+│       ├── voice_store.py #   가족 목소리 mp3 샘플 저장소
+│       └── __main__.py    #   CLI 데모
 ├── output/                # 생성된 동화책 .md (자동 생성, git 제외)
 └── voices/                # 가족 목소리 녹음 (자동 생성, 개인정보 — git 제외)
 ```
@@ -117,7 +134,7 @@ streamlit run app.py
 ### CLI 데모
 
 ```bash
-python src/worditale_agent.py
+cd src && python -m worditale
 ```
 
 > `OPENAI_API_KEY`가 있으면 OpenAI(gpt-4o-mini), `ANTHROPIC_API_KEY`가 있으면 Claude로 생성하고,

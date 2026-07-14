@@ -23,15 +23,15 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
-import voice_store  # noqa: E402
-from worditale_agent import (  # noqa: E402
+from worditale import (  # noqa: E402
     HERO_DEFAULT,
     MAX_WORDS,
     MIN_WORDS,
-    _llm_provider,
     check_words,
     graph,
+    llm_provider,
 )
+from worditale import voice_store  # noqa: E402
 
 st.set_page_config(page_title="WordiTale", page_icon="🐰", layout="wide")
 
@@ -39,11 +39,13 @@ st.set_page_config(page_title="WordiTale", page_icon="🐰", layout="wide")
 NODE_LABELS = {
     "check_words": "🔧 툴① check_words — 단어 적합성 검사",
     "reject_input": "🚫 reject_input — 부적합 입력 거절",
-    "plan_story": "📝 plan_story — 줄거리 개요 생성 (복습 단어 반영)",
-    "write_pages_toddler": "👶 write_pages_toddler — 영아용(≤3세) 스타일로 작성",
-    "write_pages_standard": "🧒 write_pages_standard — 표준(≥4세) 스타일로 작성",
+    "plan_story": "📝 plan_story — 오케스트레이터: 줄거리 + 페이지별 브리프 설계",
     "finalize": "✅ finalize — 상태 확정 + 배운 단어 메모리 누적",
     "save_storybook": "💾 툴② save_storybook — 동화책 파일 저장",
+}
+PAGE_WORKERS = {
+    "write_page_toddler": "영아용(≤3세) 의성어 스타일",
+    "write_page_standard": "표준(≥4세) 스토리 스타일",
 }
 
 GREETING = (
@@ -114,7 +116,7 @@ with st.sidebar:
         st.caption(", ".join(learned))
 
     st.divider()
-    mode = _llm_provider() or "mock"
+    mode = llm_provider() or "mock"
     st.caption(f"LLM 모드: **{mode}**" + (" (키 없이 규칙 기반 데모)" if mode == "mock" else ""))
 
     if st.button("💬 대화 초기화"):
@@ -222,6 +224,11 @@ def run_generation(words: list[str], age: int, theme: str) -> tuple[dict, list[s
     trace: list[str] = []
     illust_count = 0
     retry_seen = 0
+    worker_counts: dict[str, int] = {}
+
+    def emit(line: str) -> None:
+        st.write(line)
+        trace.append(line)
 
     with st.status("🪄 동화를 만드는 중...", expanded=True) as status:
         inputs = {"target_words": words, "child_age": age, "theme": theme,
@@ -231,7 +238,13 @@ def run_generation(words: list[str], age: int, theme: str) -> tuple[dict, list[s
                 if node == "gen_illust_prompt":
                     illust_count += 1
                     continue  # 병렬 실행이라 개수만 세고, 완료 시 한 줄로 표시
+                if node in PAGE_WORKERS:
+                    worker_counts[node] = worker_counts.get(node, 0) + 1
+                    continue  # 페이지 워커도 병렬 — validate 직전에 한 줄로 표시
                 if node == "validate_story":
+                    for wn, cnt in worker_counts.items():
+                        emit(f"⚡ {wn} ×{cnt} — 페이지 병렬 작성 ({PAGE_WORKERS[wn]})")
+                    worker_counts = {}
                     issues = (update or {}).get("issues") or []
                     if issues:
                         retry_seen += 1
@@ -240,14 +253,11 @@ def run_generation(words: list[str], age: int, theme: str) -> tuple[dict, list[s
                         line = "🔍 validate_story — 검증 통과"
                 elif node == "save_storybook":
                     if illust_count:
-                        para = f"⚡ gen_illust_prompt ×{illust_count} — 삽화 프롬프트 병렬 생성 완료"
-                        st.write(para)
-                        trace.append(para)
+                        emit(f"⚡ gen_illust_prompt ×{illust_count} — 삽화 프롬프트 병렬 생성 완료")
                     line = NODE_LABELS[node]
                 else:
                     line = NODE_LABELS.get(node, f"⚙️ {node}")
-                st.write(line)
-                trace.append(line)
+                emit(line)
         status.update(label="✨ 완성!", state="complete", expanded=False)
 
     return graph.get_state(config).values, trace
