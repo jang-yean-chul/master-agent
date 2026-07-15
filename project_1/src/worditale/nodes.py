@@ -8,6 +8,7 @@ import json
 import re
 
 from worditale.config import (
+    BANNED_WORDS,
     CHARACTER_SHEET_DEFAULT,
     HERO_DEFAULT,
     MAX_CHARS_PER_PAGE,
@@ -225,7 +226,26 @@ def write_page_standard(payload: dict) -> dict:
     return {"pages": [{"page": brief["page"], "text": text}]}
 
 
-# ── 노드 5: 검증 (규칙 기반, LLM 불필요) ─────────────────────
+# ── 노드 5: 검증 게이트 — 규칙 검사 + 출력 안전성 검사 ───────
+def _llm_judge_story(full_text: str) -> str | None:
+    """출력 안전성 2차 검사: 생성된 본문을 LLM이 유아 적합성 기준으로 판정.
+    문제가 있으면 사유 문자열, 없거나 판정 실패면 None."""
+    try:
+        raw = call_llm(
+            f"다음 유아(3~7세) 동화 본문에 부적절한 요소"
+            f"(폭력·공포·죽음·성인 소재·차별/혐오)가 있는지 검사해줘.\n"
+            f"본문: {full_text}\n"
+            f'JSON으로만 답해: {{"safe": true 또는 false, "reason": "문제가 있으면 이유 한 줄"}}',
+            max_tokens=150,
+        )
+        data = json.loads(re.search(r"\{.*\}", raw, re.S).group())
+        if not data.get("safe", True):
+            return data.get("reason", "유아 부적합 요소 감지")
+    except Exception:
+        pass  # 판정 실패 시 규칙 검사 결과만 사용
+    return None
+
+
 def validate_story(state: StoryState) -> dict:
     pages, words = state["pages"], state["target_words"]
     full_text = " ".join(p["text"] for p in pages)
@@ -239,6 +259,18 @@ def validate_story(state: StoryState) -> dict:
     for p in pages:
         if len(p["text"]) > MAX_CHARS_PER_PAGE:
             issues.append(f"{p['page']}페이지 텍스트 과다: {len(p['text'])}자")
+
+    # 출력 안전성 ①: 본문 금지어 스캔 (무료, mock에서도 동작)
+    # ※ 1글자 금지어(칼/술/피 등)는 '칼국수', '술래잡기' 같은 오탐 때문에 제외
+    banned_in_text = [w for w in BANNED_WORDS if len(w) >= 2 and w in full_text]
+    if banned_in_text:
+        issues.append(f"본문에 부적절 단어 포함: {', '.join(banned_in_text)}")
+
+    # 출력 안전성 ②: LLM 의미 판정 (키 있을 때만) — 금지어에 없는 부적절 요소를 거름
+    if not issues and llm_provider():
+        reason = _llm_judge_story(full_text)
+        if reason:
+            issues.append(f"본문 안전성 문제: {reason}")
 
     update: dict = {"issues": issues}
     if issues:
