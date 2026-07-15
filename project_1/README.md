@@ -94,6 +94,7 @@ flowchart TD
 project_1/
 ├── README.md              # 프로젝트 소개 (이 문서)
 ├── requirements.txt       # 의존성
+├── requirements-dev.txt   # 개발용 의존성 (pytest)
 ├── app.py                 # Streamlit 대화형 UI (채팅 + 노드/툴 실행 시각화)
 ├── docs/
 │   ├── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
@@ -108,6 +109,11 @@ project_1/
 │       ├── graph.py       #   라우팅 + 그래프 조립 (+ 메모리 체크포인터)
 │       ├── voice_store.py #   가족 목소리 mp3 샘플 저장소
 │       └── __main__.py    #   CLI 데모
+├── tests/                 # PyTest — 규칙·배선·폴백 검증 (mock 모드, 무료·결정적)
+├── evals/                 # AI-as-judge — 실제 LLM 출력 품질 평가 (rubric 채점)
+│   ├── cases.py           #   고정 평가 케이스 6종
+│   ├── run_eval.py        #   평가 실행 + 리포트 생성
+│   └── results/           #   평가 리포트 .md (자동 생성)
 ├── output/                # 생성된 동화책 .md (자동 생성, git 제외)
 └── voices/                # 가족 목소리 녹음 (자동 생성, 개인정보 — git 제외)
 ```
@@ -163,3 +169,36 @@ cd src && python -m worditale
 [상태] rejected
 [사유] ["'칼'은(는) 유아 동화에 부적합한 단어입니다"]
 ```
+
+## 🧪 테스트
+
+두 층으로 나뉩니다 — **PyTest는 코드가 깨졌는지**, **AI-as-judge는 출력 품질이 좋은지**.
+
+### PyTest (매 커밋 — 무료·빠름·결정적)
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+API 키 없이 mock 모드로 실행됩니다 (테스트가 키를 자동 제거해 비용 발생 차단):
+
+- `test_helpers.py` — 조사 선택·단어 배치·페이지 수 계산 등 순수 함수
+- `test_state.py` — Send 병렬 결과 병합/누적 리듀서
+- `test_tools.py` — check_words 규칙 필터, save_storybook 파일 저장
+- `test_nodes.py` — 오케스트레이터 안전망(LLM이 규격 밖 출력을 줬을 때 폴백), 검증 게이트, 워커
+- `test_graph.py` — 그래프 end-to-end: 거절 라우팅, 재작성 루프, 나이 분기, thread 메모리
+
+### AI-as-judge 평가 (프롬프트 수정 시 수동 — API 비용 발생)
+
+```bash
+python evals/run_eval.py                  # 전체 6케이스
+python evals/run_eval.py standard-4yo     # 특정 케이스만
+```
+
+고정 케이스(`evals/cases.py`)로 실제 동화를 생성한 뒤, judge LLM이 rubric
+(서사 연결성 / 단어 자연스러움 / 문체 일관성 / 연령 적합성 / 캐릭터 지칭) 항목별 1~5점으로
+채점하고 `evals/results/`에 리포트를 남깁니다. 항목 평균 4.0점 미만이면 ⚠️ 표시.
+
+> 비결정적(같은 코드도 점수가 흔들림)이므로 CI 게이트가 아니라
+> **프롬프트 개선 전후 비교용**으로 사용하세요.
