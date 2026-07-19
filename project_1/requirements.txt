@@ -4,4 +4,5 @@ openai>=1.50
 streamlit>=1.39
 python-dotenv>=1.0
 mutagen>=1.47
+pillow>=10.0
 
