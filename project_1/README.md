@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-1C3C3C?logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![Claude](https://img.shields.io/badge/Claude-API-D97757?logo=anthropic&logoColor=white)](https://docs.claude.com/)
-[![Status](https://img.shields.io/badge/Status-Step_3_완료-success)]()
+[![Status](https://img.shields.io/badge/Status-Step_5_완료_·_삽화_그림책-success)]()
 
 </div>
 
@@ -37,9 +37,10 @@ flowchart TD
     T1 -- "✅ 통과" --> A[plan_story 🧠오케스트레이터<br/><small>줄거리 + 페이지별 브리프 설계</small>]
     A -- "👶 age ≤ 3" --> B1[write_story_toddler<br/><small>의성어 · 전체 한 호흡 집필</small>]
     A -- "🧒 age ≥ 4" --> B2[write_story_standard<br/><small>스토리 · 전체 한 호흡 집필</small>]
-    B1 --> C{validate_story<br/><small>단어 포함·분량·길이 검사</small>}
+    B1 --> C{validate_story<br/><small>단어·분량·안전성·서사 검사</small>}
     B2 --> C
-    C -- "❌ 실패 · 재시도 ≤ 2회 · 문제 피드백 전달" --> B1 & B2
+    C -- "❌ 규칙/안전 문제 · 재시도 ≤ 2회" --> B1 & B2
+    C -- "❌ 서사 문제(인과 없는 나열) → 설계부터 재계획" --> A
     C -- "✅ 통과" --> PS[polish_story<br/><small>이음새 다듬기 — 통독 품질 패스</small>]
     PS --> D[finalize<br/><small>배운 단어 메모리 누적</small>]
     D --> PI[plan_illustrations<br/><small>삽화 연출 계획 — 배경·시간·소품 연속성</small>]
@@ -65,7 +66,7 @@ flowchart TD
 
 | 패턴 | 구현 |
 |------|------|
-| 프롬프트 체이닝 | 기획 → 집필 → **검증(게이트)** → 이음새 다듬기 → 마무리. 검증 실패 시 문제 피드백과 함께 전체 재집필 루프 |
+| 프롬프트 체이닝 | 기획 → 집필 → **검증(게이트)** → 이음새 다듬기 → 마무리. 검증은 규칙 검사(단어·분량·금지어) + LLM 판정(안전성·**서사 기승전결**) 2단 — 규칙/안전 문제는 재집필로, **서사 문제(연결어만 있고 인과 없는 나열)는 원인이 설계에 있으므로 기획부터 재계획**으로 되돌림 (합산 재시도 ≤ 2회) |
 | 기획-집필 분리 | `plan_story`(설계자)가 페이지 수·단어 배치·페이지별 장면(브리프)을 **동적으로 계획** → 집필 노드가 브리프를 따라 **전체를 한 호흡으로 작성**. 처음엔 페이지별 병렬 워커였으나 문장 이음새가 끊겨 전체 집필로 전환 (이야기 흐름 > 집필 속도) |
 | 병렬 처리 (Send API) | 삽화 연출 계획(배경·시간·소품 연속성) → 기준 이미지 2장(캐릭터+배경) 생성 → **페이지별 삽화 생성 ×N 팬아웃** — 모든 페이지가 같은 기준 이미지들을 참조해 병렬로 그려짐 |
 
@@ -74,7 +75,7 @@ flowchart TD
 | 요건 | 구현 |
 |------|------|
 | 노드 3개 이상 | 12개 (check_words, reject_input, plan_story, write_story_toddler/standard, validate_story, polish_story, finalize, plan_illustrations, gen_character_ref, gen_illust_prompt, save_storybook) |
-| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따라 집필 스타일 선택**, ③ 검증 재작성 루프(문제 피드백과 함께 전체 재집필) |
+| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따라 집필 스타일 선택**, ③ 검증 라우팅(규칙/안전 문제 → 재집필, 서사 문제 → 설계부터 재계획, 통과 → 다듬기) |
 | Tool 연동 | 2개 — `check_words`(커스텀 검사 툴), `save_storybook`(파일 저장 툴) |
 | 병렬 실행 (Send API) | `gen_illust_prompt` ×N — 기준 캐릭터 이미지를 참조한 페이지별 삽화 병렬 생성 |
 | 메모리 | `MemorySaver` + 아이별 `thread_id` — 배운 단어 누적, 다음 동화에 복습 단어로 재등장 |
@@ -89,7 +90,7 @@ flowchart TD
 | **Step 1** | 에이전트 설계 — 이름 · 목적 · 핵심 기능 · 그래프 구조 | ✅ 완료 |
 | **Step 2** | LangGraph 기초 구축 — 커스텀 State · 노드 4개 · 조건부 엣지(재작성 루프) | ✅ 완료 |
 | **Step 3** | 툴 2개 연동 · 사용자 입력(나이) 분기 · Send 병렬 삽화 프롬프트 · 메모리(배운 단어 누적) | ✅ 완료 |
-| **Step 4** | 실제 API(OpenAI/Claude) 텍스트 생성 품질 테스트 | ⬜ 예정 |
+| **Step 4** | 실제 API 텍스트 품질 — gpt-4.1 확정, 전체 한 호흡 집필, 서사 게이트(기승전결 검증·재계획 루프) | ✅ 완료 |
 | **Step 5** | 삽화 이미지 생성 연동 — gpt-image-1, 사이드바에서 Low(테스트)/Medium(최종) 선택 | ✅ 완료 |
 | **Step 6** | 부모 음성 TTS — 목소리 샘플 업로드(역할별 mp3 2개) ✅ → 클로닝·낭독 생성 ⬜ | 🟡 진행중 |
 | **Step 7** | 앱 UI 연동 — 동화 생성 UI·테마·배포 준비 ✅ → 동화책 뷰어 + 낭독 재생 ⬜ | 🟡 진행중 |
@@ -102,8 +103,11 @@ project_1/
 ├── requirements.txt       # 의존성
 ├── requirements-dev.txt   # 개발용 의존성 (pytest)
 ├── app.py                 # Streamlit 대화형 UI (채팅 + 워디 실시간 중계 + 개발자 모드)
+├── packages.txt           # Streamlit Cloud 시스템 패키지 (fonts-nanum — 글귀 합성용 한글 폰트)
+├── PRODUCT.md             # 제품 원칙 (아이 몰입 최우선 · 기술은 무대 뒤)
+├── DESIGN.md              # 디자인 시스템 ("머리맡의 그림책" — 살구 팔레트·조판)
 ├── .streamlit/
-│   └── config.toml        # 살구 테마 (DESIGN.md "머리맡의 그림책")
+│   └── config.toml        # 살구 테마 (DESIGN.md 기반)
 ├── docs/
 │   ├── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
 │   └── HANDOVER.md        # 인수인계 문서 (현황·구조·실행법·주의사항)
@@ -113,7 +117,8 @@ project_1/
 │       ├── state.py       #   그래프 State(TypedDict) + 리듀서
 │       ├── llm.py         #   LLM 클라이언트 (OpenAI/Claude/mock 자동 선택)
 │       ├── tools.py       #   툴① check_words · 툴② save_storybook
-│       ├── nodes.py       #   노드 함수 (오케스트레이터/워커/검증/삽화/저장)
+│       ├── nodes.py       #   노드 함수 (오케스트레이터/집필/검증/삽화/저장)
+│       ├── imaging.py     #   삽화에 페이지 글귀 합성 (Pillow — 크림 띠 캡션)
 │       ├── graph.py       #   라우팅 + 그래프 조립 (+ 메모리 체크포인터)
 │       ├── voice_store.py #   가족 목소리 mp3 샘플 저장소
 │       └── __main__.py    #   CLI 데모
@@ -141,7 +146,7 @@ streamlit run app.py
 - 🍑 **살구 테마 + 동화 전용 조판** — 완성된 동화 본문은 UI보다 큰 활자로, 페이지 표시와 함께 렌더링 (`.streamlit/config.toml` + 커스텀 CSS)
 - 🪄 생성 중 진행 상황을 **워디(동화 요정)의 말로 실시간 중계** — 완료 후엔 "워디가 일한 과정" 패널로 남습니다
 - ↩️ 입력 도중 `다시`라고 치면 언제든 처음부터, 나이는 `4`·`20개월` 둘 다 인식 (1~10살 범위 검증)
-- 🖼️ **삽화 이미지 생성 (Step 5)** — 사이드바 "삽화 그림"에서 선택: 빠른 스케치(low, 테스트용·저렴) / 예쁜 그림(medium, 최종본용) / 그리지 않기. OpenAI 키가 있을 때만 활성화되며, 페이지별로 병렬 생성되어 그림책 형태로 표시됩니다 (`output/images/<테마>/p*.png` 저장, .md 파일에도 임베드). 화풍은 플랫 그림책풍으로 고정(`config.ILLUST_STYLE`)
+- 🖼️ **삽화 이미지 생성 (Step 5)** — 사이드바 "삽화 그림"에서 선택: 빠른 스케치(low, 테스트용·저렴) / 예쁜 그림(medium, 최종본용) / 그리지 않기. OpenAI 키가 있을 때만 활성화되며, 페이지별로 병렬 생성되어 그림책 형태로 표시됩니다 (`output/images/<테마>/p*.png` 저장, .md 파일에도 임베드). 화풍은 손맛 수채화로 고정(`config.ILLUST_STYLE`), 캐릭터+배경 기준 이미지 2장을 모든 페이지가 참조해 일관성 유지. 생성 실패 시 참조 없이 1회 재시도하고, 그래도 실패하면 해당 쪽은 글로만 싣고 알려줍니다
 - 🖋️ **그림 안에 동화 글귀** — 삽화 아래 크림색 띠에 페이지 텍스트를 Pillow로 합성해 한 장짜리 그림책 페이지로 완성 (이미지 모델의 한글 깨짐 없이 항상 정확). 사이드바 체크박스로 끄기 가능. Streamlit Cloud에선 `packages.txt`(fonts-nanum)가 한글 폰트를 설치
 - 📥 완성된 동화는 **파일로 다운로드** 가능, 생성 실패 시엔 입력을 보존한 채 재시도 안내
 - 👶 사이드바에서 **아이 이름별 메모리**(지금까지 배운 단어)를 확인 — 같은 이름이면 다음 동화에 복습 단어가 재등장
@@ -215,7 +220,8 @@ API 키 없이 mock 모드로 실행됩니다 (테스트가 키를 자동 제거
 - `test_helpers.py` — 조사 선택·단어 배치·페이지 수 계산 등 순수 함수
 - `test_state.py` — Send 병렬 결과 병합/누적 리듀서
 - `test_tools.py` — check_words 규칙 필터, save_storybook 파일 저장
-- `test_nodes.py` — 오케스트레이터 안전망(LLM이 규격 밖 출력을 줬을 때 폴백), 검증 게이트, 워커
+- `test_nodes.py` — 오케스트레이터 안전망(LLM이 규격 밖 출력을 줬을 때 폴백), 검증 게이트(서사 판정·재계획 라우팅 포함), 삽화 실패 재시도
+- `test_imaging.py` — 글귀 합성(크림 띠 캡션·폰트 폴백)
 - `test_graph.py` — 그래프 end-to-end: 거절 라우팅, 재작성 루프, 나이 분기, thread 메모리
 
 ### AI-as-judge 평가 (프롬프트 수정 시 수동 — API 비용 발생)
