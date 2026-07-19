@@ -30,11 +30,12 @@ from worditale.config import (
     hero_name,
 )
 from worditale.graph import graph
-from worditale.llm import call_llm, llm_provider
+from worditale.llm import call_llm, generate_image, image_provider, llm_provider
 from worditale.tools import check_words, save_storybook
 
 __all__ = [
     "HERO_DEFAULT", "MAX_CHARS_PER_PAGE", "MAX_PAGES", "MAX_RETRIES", "MAX_WORDS",
     "MIN_PAGES", "MIN_WORDS", "TODDLER_MAX_AGE",
-    "call_llm", "check_words", "graph", "hero_name", "llm_provider", "save_storybook",
+    "call_llm", "check_words", "generate_image", "graph", "hero_name",
+    "image_provider", "llm_provider", "save_storybook",
 ]

@@ -65,18 +65,28 @@ def check_words(words: list[str]) -> dict:
 
 @tool
 def save_storybook(title: str, pages: list[dict], illust_prompts: list[dict]) -> str:
-    """완성된 동화(페이지 텍스트 + 페이지별 삽화 프롬프트)를
-    output/<제목>.md 마크다운 파일로 저장하고 저장 경로를 반환한다."""
+    """완성된 동화(페이지 텍스트 + 삽화 이미지/프롬프트)를
+    output/<제목>.md 마크다운 파일로 저장하고 저장 경로를 반환한다.
+    삽화 항목에 image_path가 있으면 이미지를 상대 경로로 임베드한다."""
     out_dir = PROJECT_ROOT / "output"
     out_dir.mkdir(exist_ok=True)
     safe = re.sub(r"[^가-힣a-zA-Z0-9 _-]", "", title).strip() or "storybook"
     path = out_dir / f"{safe}.md"
 
-    prompt_by_page = {p["page"]: p["prompt"] for p in illust_prompts}
+    illust_by_page = {p["page"]: p for p in illust_prompts}
     lines = [f"# {title}", ""]
     for p in sorted(pages, key=lambda x: x["page"]):
-        lines += [f"## {p['page']}페이지", "", p["text"], ""]
-        if p["page"] in prompt_by_page:
-            lines += [f"> 삽화 프롬프트: {prompt_by_page[p['page']]}", ""]
+        lines += [f"## {p['page']}페이지", ""]
+        illust = illust_by_page.get(p["page"], {})
+        if illust.get("image_path"):
+            img = Path(illust["image_path"])
+            try:
+                rel = img.relative_to(out_dir).as_posix()  # output/ 기준 상대 경로
+            except ValueError:
+                rel = img.as_posix()
+            lines += [f"![{p['page']}페이지 삽화]({rel})", ""]
+        lines += [p["text"], ""]
+        if illust.get("prompt"):
+            lines += [f"> 삽화 프롬프트: {illust['prompt']}", ""]
     path.write_text("\n".join(lines), encoding="utf-8")
     return str(path)

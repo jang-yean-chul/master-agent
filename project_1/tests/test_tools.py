@@ -63,3 +63,15 @@ class TestSaveStorybook:
             {"title": "???", "pages": self.PAGES, "illust_prompts": []}
         )
         assert path.endswith("storybook.md")
+
+    def test_image_embedded_as_relative_path(self, isolated_output):
+        img = isolated_output / "output" / "images" / "숲속 이야기" / "p1.png"
+        img.parent.mkdir(parents=True)
+        img.write_bytes(b"png")
+        prompts = [{"page": 1, "prompt": "a rabbit", "image_path": str(img)}]
+        save_storybook.invoke(
+            {"title": "숲속 이야기", "pages": self.PAGES, "illust_prompts": prompts}
+        )
+        content = (isolated_output / "output" / "숲속 이야기.md").read_text(encoding="utf-8")
+        assert "![1페이지 삽화](images/숲속 이야기/p1.png)" in content  # output/ 기준 상대 경로
+        assert "삽화 프롬프트: a rabbit" in content

@@ -35,13 +35,16 @@ flowchart TD
     S([START]) --> T1[check_words 🔧툴①<br/><small>단어 적합성 검사</small>]
     T1 -- "🚫 부적합" --> R[reject_input<br/><small>거절 사유 안내</small>] --> E1([END])
     T1 -- "✅ 통과" --> A[plan_story 🧠오케스트레이터<br/><small>줄거리 + 페이지별 브리프 설계</small>]
-    A -- "👶 age ≤ 3 · ⚡Send ×N" --> B1[write_page_toddler 워커<br/><small>의성어 · 1문장 · 병렬</small>]
-    A -- "🧒 age ≥ 4 · ⚡Send ×N" --> B2[write_page_standard 워커<br/><small>스토리 · 1~2문장 · 병렬</small>]
+    A -- "👶 age ≤ 3" --> B1[write_story_toddler<br/><small>의성어 · 전체 한 호흡 집필</small>]
+    A -- "🧒 age ≥ 4" --> B2[write_story_standard<br/><small>스토리 · 전체 한 호흡 집필</small>]
     B1 --> C{validate_story<br/><small>단어 포함·분량·길이 검사</small>}
     B2 --> C
-    C -- "❌ 실패 · 재시도 ≤ 2회" --> A2{워커 재팬아웃} --> B1 & B2
-    C -- "✅ 통과 or 재시도 소진" --> D[finalize<br/><small>배운 단어 메모리 누적</small>]
-    D -- "⚡ Send 병렬 ×N" --> P[gen_illust_prompt<br/><small>페이지별 삽화 프롬프트</small>]
+    C -- "❌ 실패 · 재시도 ≤ 2회 · 문제 피드백 전달" --> B1 & B2
+    C -- "✅ 통과" --> PS[polish_story<br/><small>이음새 다듬기 — 통독 품질 패스</small>]
+    PS --> D[finalize<br/><small>배운 단어 메모리 누적</small>]
+    D --> PI[plan_illustrations<br/><small>삽화 연출 계획 — 배경·시간·소품 연속성</small>]
+    PI --> CR[gen_character_ref<br/><small>기준 이미지 캐릭터+배경 — 일관성 앵커</small>]
+    CR -- "⚡ Send 병렬 ×N" --> P[gen_illust_prompt<br/><small>페이지별 삽화 프롬프트 + 이미지</small>]
     P --> T2[save_storybook 🔧툴②<br/><small>output/*.md 저장</small>]
     T2 --> E2([END])
 
@@ -51,6 +54,9 @@ flowchart TD
     style B1 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
     style B2 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
     style C fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    style PS fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style PI fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+    style CR fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
     style P fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
     style D fill:#dcfce7,stroke:#22c55e,color:#14532d
 ```
@@ -59,18 +65,18 @@ flowchart TD
 
 | 패턴 | 구현 |
 |------|------|
-| 프롬프트 체이닝 | 기획 → 작성 → **검증(게이트)** → 마무리. 검증 실패 시 재작성 루프 |
-| Orchestrator-Workers | `plan_story`(오케스트레이터)가 페이지 수·단어 배치·페이지별 장면(브리프)을 **동적으로 계획** → 페이지 워커들이 브리프대로 병렬 작성. 각 워커는 전체 줄거리 + 자기 브리프 + **앞뒤 페이지 장면 요약**을 받아 이음새가 어긋나지 않음 |
-| 병렬 처리 (Send API) | 페이지 작성 워커 ×N + 삽화 프롬프트 생성 ×N 팬아웃 |
+| 프롬프트 체이닝 | 기획 → 집필 → **검증(게이트)** → 이음새 다듬기 → 마무리. 검증 실패 시 문제 피드백과 함께 전체 재집필 루프 |
+| 기획-집필 분리 | `plan_story`(설계자)가 페이지 수·단어 배치·페이지별 장면(브리프)을 **동적으로 계획** → 집필 노드가 브리프를 따라 **전체를 한 호흡으로 작성**. 처음엔 페이지별 병렬 워커였으나 문장 이음새가 끊겨 전체 집필로 전환 (이야기 흐름 > 집필 속도) |
+| 병렬 처리 (Send API) | 삽화 연출 계획(배경·시간·소품 연속성) → 기준 이미지 2장(캐릭터+배경) 생성 → **페이지별 삽화 생성 ×N 팬아웃** — 모든 페이지가 같은 기준 이미지들을 참조해 병렬로 그려짐 |
 
 **과제 요건 매핑**
 
 | 요건 | 구현 |
 |------|------|
-| 노드 3개 이상 | 9개 (check_words, reject_input, plan_story, write_page_toddler/standard, validate_story, finalize, gen_illust_prompt, save_storybook) |
-| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따라 워커 종류 선택 + Send 팬아웃**, ③ 검증 재작성 루프(워커 재팬아웃) |
+| 노드 3개 이상 | 12개 (check_words, reject_input, plan_story, write_story_toddler/standard, validate_story, polish_story, finalize, plan_illustrations, gen_character_ref, gen_illust_prompt, save_storybook) |
+| Conditional Edge (사용자 입력 분기) | 3개 — ① 단어 적합성 통과/거절, ② **나이(사용자 입력)에 따라 집필 스타일 선택**, ③ 검증 재작성 루프(문제 피드백과 함께 전체 재집필) |
 | Tool 연동 | 2개 — `check_words`(커스텀 검사 툴), `save_storybook`(파일 저장 툴) |
-| 병렬 실행 (Send API) | 페이지 워커 ×N (plan_story 뒤) + `gen_illust_prompt` ×N (finalize 뒤) |
+| 병렬 실행 (Send API) | `gen_illust_prompt` ×N — 기준 캐릭터 이미지를 참조한 페이지별 삽화 병렬 생성 |
 | 메모리 | `MemorySaver` + 아이별 `thread_id` — 배운 단어 누적, 다음 동화에 복습 단어로 재등장 |
 
 상세 설계(State 정의, 엣지 케이스 분석, 비용 계획)는 📄 [docs/agent_design.md](docs/agent_design.md),
@@ -84,9 +90,9 @@ flowchart TD
 | **Step 2** | LangGraph 기초 구축 — 커스텀 State · 노드 4개 · 조건부 엣지(재작성 루프) | ✅ 완료 |
 | **Step 3** | 툴 2개 연동 · 사용자 입력(나이) 분기 · Send 병렬 삽화 프롬프트 · 메모리(배운 단어 누적) | ✅ 완료 |
 | **Step 4** | 실제 API(OpenAI/Claude) 텍스트 생성 품질 테스트 | ⬜ 예정 |
-| **Step 5** | 삽화 이미지 생성 연동 — 1차 Low 품질 테스트 → 최종 Medium 품질 출력 | ⬜ 예정 |
+| **Step 5** | 삽화 이미지 생성 연동 — gpt-image-1, 사이드바에서 Low(테스트)/Medium(최종) 선택 | ✅ 완료 |
 | **Step 6** | 부모 음성 TTS — 목소리 샘플 업로드(역할별 mp3 2개) ✅ → 클로닝·낭독 생성 ⬜ | 🟡 진행중 |
-| **Step 7** | 앱 UI 연동 (동화책 뷰어 + 낭독 재생) | ⬜ 예정 |
+| **Step 7** | 앱 UI 연동 — 동화 생성 UI·테마·배포 준비 ✅ → 동화책 뷰어 + 낭독 재생 ⬜ | 🟡 진행중 |
 
 ## 📁 폴더 구조
 
@@ -95,7 +101,9 @@ project_1/
 ├── README.md              # 프로젝트 소개 (이 문서)
 ├── requirements.txt       # 의존성
 ├── requirements-dev.txt   # 개발용 의존성 (pytest)
-├── app.py                 # Streamlit 대화형 UI (채팅 + 노드/툴 실행 시각화)
+├── app.py                 # Streamlit 대화형 UI (채팅 + 워디 실시간 중계 + 개발자 모드)
+├── .streamlit/
+│   └── config.toml        # 살구 테마 (DESIGN.md "머리맡의 그림책")
 ├── docs/
 │   ├── agent_design.md    # 에이전트 설계 문서 (Step 1 + Step 3 확장)
 │   └── HANDOVER.md        # 인수인계 문서 (현황·구조·실행법·주의사항)
@@ -127,15 +135,35 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-채팅으로 **학습 단어 → 아이 나이 → 테마**를 차례로 입력하면 동화가 생성됩니다.
+채팅으로 **학습 단어 → 아이 나이 → 테마**를 차례로 입력하고, 마지막 **확인 버튼**을 누르면 동화가 생성됩니다.
 
 - 💡 상단 **이용 가이드**가 단어·나이·테마·주인공 입력 요령을 안내 (첫 방문 시 자동으로 펼쳐짐)
-- 🛠️ 생성 중 **에이전트 노드·툴 실행 과정이 실시간 표시**되고, 완료 후엔 "실행 과정" 패널로 남습니다
-- 🗺️ 상단 "에이전트 그래프 구조 보기"에서 전체 그래프를 mermaid로 시각화
+- 🍑 **살구 테마 + 동화 전용 조판** — 완성된 동화 본문은 UI보다 큰 활자로, 페이지 표시와 함께 렌더링 (`.streamlit/config.toml` + 커스텀 CSS)
+- 🪄 생성 중 진행 상황을 **워디(동화 요정)의 말로 실시간 중계** — 완료 후엔 "워디가 일한 과정" 패널로 남습니다
+- ↩️ 입력 도중 `다시`라고 치면 언제든 처음부터, 나이는 `4`·`20개월` 둘 다 인식 (1~10살 범위 검증)
+- 🖼️ **삽화 이미지 생성 (Step 5)** — 사이드바 "삽화 그림"에서 선택: 빠른 스케치(low, 테스트용·저렴) / 예쁜 그림(medium, 최종본용) / 그리지 않기. OpenAI 키가 있을 때만 활성화되며, 페이지별로 병렬 생성되어 그림책 형태로 표시됩니다 (`output/images/<테마>/p*.png` 저장, .md 파일에도 임베드). 화풍은 플랫 그림책풍으로 고정(`config.ILLUST_STYLE`)
+- 🖋️ **그림 안에 동화 글귀** — 삽화 아래 크림색 띠에 페이지 텍스트를 Pillow로 합성해 한 장짜리 그림책 페이지로 완성 (이미지 모델의 한글 깨짐 없이 항상 정확). 사이드바 체크박스로 끄기 가능. Streamlit Cloud에선 `packages.txt`(fonts-nanum)가 한글 폰트를 설치
+- 📥 완성된 동화는 **파일로 다운로드** 가능, 생성 실패 시엔 입력을 보존한 채 재시도 안내
 - 👶 사이드바에서 **아이 이름별 메모리**(지금까지 배운 단어)를 확인 — 같은 이름이면 다음 동화에 복습 단어가 재등장
 - 🐻 사이드바에서 **주인공 캐릭터** 변경 가능 — 본문·삽화 전체에서 같은 이름·같은 외형(캐릭터 시트)으로 유지
 - 🎨 완성된 동화마다 페이지별 삽화 프롬프트 확인 가능
 - 🎙️ **가족 목소리 등록** — 엄마·아빠·할아버지·할머니 역할별로 약 2분짜리 mp3 녹음 2개를 업로드 (길이·형식 자동 검증, `voices/`에 저장·git 제외) → 이후 음성 클로닝 TTS 낭독에 사용 예정
+- 🛠️ 사이드바 **개발자 모드**를 켜면 에이전트 그래프 구조(mermaid)·노드 실행 로그·LLM 모드가 표시됩니다 — 평가·디버깅용, 부모에게는 숨김
+
+### Streamlit Cloud 배포
+
+1. 이 저장소를 GitHub에 푸시
+2. [share.streamlit.io](https://share.streamlit.io) → **New app** → 저장소/브랜치 선택, Main file은 `app.py`
+3. (선택) **App settings → Secrets**에 API 키 등록:
+
+   ```toml
+   OPENAI_API_KEY = "sk-..."
+   # 또는
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   ```
+
+   키를 등록하지 않으면 **mock 모드**(규칙 기반 데모)로 동작하므로 키 없이도 배포·시연이 가능합니다.
+   앱은 `st.secrets`의 키를 자동으로 환경변수로 옮겨 사용합니다 (`app.py` 상단).
 
 ### CLI 데모
 
@@ -143,8 +171,9 @@ streamlit run app.py
 cd src && python -m worditale
 ```
 
-> `OPENAI_API_KEY`가 있으면 OpenAI(gpt-4o-mini), `ANTHROPIC_API_KEY`가 있으면 Claude로 생성하고,
+> `OPENAI_API_KEY`가 있으면 OpenAI(gpt-4.1), `ANTHROPIC_API_KEY`가 있으면 Claude로 생성하고,
 > 둘 다 없으면 **mock**(규칙 기반 더미) 로직으로 동작해 키 없이도 바로 실행됩니다.
+> 텍스트/이미지 모델은 `src/worditale/config.py` 상수로 변경할 수 있습니다.
 
 **실행 예시** (mock 모드 — 데모 3종: 재작성 루프 / 나이 분기·메모리 / 입력 거절):
 

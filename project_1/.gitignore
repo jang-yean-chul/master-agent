@@ -12,3 +12,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claude Code 로컬 설정 + 설치된 플러그인 원본 (저장소엔 산출물만: PRODUCT/DESIGN.md, .impeccable/)
+.claude/

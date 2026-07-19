@@ -1,0 +1,11 @@
+# WordiTale 테마 — DESIGN.md "머리맡의 그림책": 노을빛 살구·주황 커밋형 팔레트
+[theme]
+base = "light"
+primaryColor = "#DE5F33"            # 노을빛 주황 — 버튼·포커스·강조
+backgroundColor = "#FFFBF8"         # 살구 쪽으로 미세하게 기운 중립 바탕
+secondaryBackgroundColor = "#F9E0CF" # 살구 표면 — 사이드바·입력창·확장 패널
+textColor = "#33261D"               # 따뜻한 잉크 (대비 4.5:1 이상)
+font = "sans serif"
+
+[server]
+headless = true
